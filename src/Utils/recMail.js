@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { setTimeout } = require('timers/promises');
 
 async function getKey() {
     try {
@@ -19,12 +20,14 @@ async function getKey() {
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-origin"
             },
-            withCredentials: true
+            withCredentials: true,
+            timeout: 10000
         });
 
         return response.data.items;
     } catch (error) {
-        console.error('Errore:', error);
+        console.error('Errore:', error.message);
+        throw error;
     }
 }
 
@@ -47,13 +50,15 @@ async function getEmail() {
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "cross-site"
-            }
+            },
+            timeout: 10000
         });
 
         return response.data.items;
 
     } catch (error) {
-        console.error('Errore:', error);
+        console.error('Errore:', error.message);
+        throw error;
     }
 }
 
@@ -76,12 +81,16 @@ async function getMid(email) {
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "cross-site"
-            }
+            },
+            timeout: 10000
         });
 
         return response.data.items[0].mid;
     } catch (error) {
-        return await getMid();
+        console.error('Errore in getMid:', error.message);
+        // Retry mechanism
+        await delay(5000);
+        return await getMid(email);
     }
 }
 
@@ -104,13 +113,15 @@ async function getMessage(email) {
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "cross-site"
-            }
+            },
+            timeout: 10000
         });
 
         const securityCodeMatch = response.data.items.body.match(/>\s*(\d{6})\s*<\/span>/);
         return securityCodeMatch[1];
     } catch (error) {
-        console.error('Errore:', error);
+        console.error('Errore in getMessage:', error.message);
+        throw error;
     }
 }
 

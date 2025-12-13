@@ -3,6 +3,7 @@ const fs = require("fs");
 const config = require('./config');
 const log = require('./Utils/log');
 const recMail = require('./Utils/recMail');
+const axios = require('axios');
 
 async function start() {
   console.clear();
@@ -11,14 +12,41 @@ async function start() {
 
   log("Fetching Fingerprint...", "yellow");
   plugin.setServiceKey('');
-  const fingerprint = await plugin.fetch({
-    tags: ['Microsoft Windows', 'Chrome'],
-  });
-
-  log("Applying Fingerprint...", "yellow");
-  plugin.useFingerprint(fingerprint);
-
-  log("Fingerprint fetched and applied", "green");
+  let fingerprint;
+  try {
+    fingerprint = await plugin.fetch({
+      tags: ['Microsoft Windows', 'Chrome'],
+    });
+    
+    // Validate that we got a proper fingerprint
+    if (!fingerprint || typeof fingerprint !== 'object' || Object.keys(fingerprint).length === 0) {
+      throw new Error('Invalid fingerprint received');
+    }
+    
+    // Additional check for promotional messages that might be returned by the service
+    if (typeof fingerprint === 'string' && fingerprint.includes('Filters by tags')) {
+      throw new Error('Fingerprint service returned promotional message');
+    }
+    
+    log("Applying Fingerprint...", "yellow");
+    plugin.useFingerprint(fingerprint);
+    
+    log("Fingerprint fetched and applied", "green");
+  } catch (error) {
+    if (error.message.includes('aborted') || error.message.includes('timeout')) {
+      log("Failed to fetch fingerprint: " + error.message, "red");
+      log("This may be due to network connectivity issues or service unavailability.", "red");
+      log("Continuing with default browser settings...", "yellow");
+    } else if (error.message.includes('Filters by tags') || error.message.includes('promotional')) {
+      // Handle the specific case where the service returns promotional text
+      log("Fingerprint service returned promotional message. Continuing without fingerprint.", "yellow");
+    } else {
+      log("Failed to fetch fingerprint: " + error.message, "red");
+      log("Continuing with default browser settings...", "yellow");
+    }
+    // Continue with default browser settings if fingerprint fetching fails
+    fingerprint = null;
+  }
 
   if (config.USE_PROXY) {
     log("Applying proxy settings...", "green");
@@ -64,21 +92,128 @@ async function start() {
 
 async function createAccount(page) {
   // Going to Outlook register page.
-  await page.goto("https://outlook.live.com/owa/?nlp=1&signup=1");
+  await page.goto("https://signup.live.com/signup?lic=1&uaid=b4ac39f4a2264fff82a3a0349402c47c");
   await page.waitForSelector(SELECTORS.USERNAME_INPUT);
 
   // Generating Random Personal Info.
   const PersonalInfo = await generatePersonalInfo();
 
-  // Username
-  await page.type(SELECTORS.USERNAME_INPUT, PersonalInfo.username);
-  await page.keyboard.press("Enter");
+  // Email
+  log("Entering email...", "green");
+  log(`Attempting to fill email field with: ${PersonalInfo.email}`, "yellow");
+  
+  // Debug: Log all available input fields on the page
+  try {
+    const allInputs = await page.$$eval('input', inputs => inputs.map(i => i.id || i.name || i.type));
+    log(`Available input fields: ${allInputs.join(', ')}`, "yellow");
+  } catch (debugError) {
+    log(`Could not retrieve input fields: ${debugError.message}`, "yellow");
+  }
+  
+  try {
+    // Simple wait using existing delay function
+    await delay(1000);
+    log("Page ready, waiting for email input...", "yellow");
+    await page.waitForSelector(SELECTORS.USERNAME_INPUT, { timeout: 10000 });
+    log("Email input found", "green");
+    
+    // Fill the field
+    await page.type(SELECTORS.USERNAME_INPUT, PersonalInfo.email);
+    log("Email field filled", "green");
+    
+    // Press enter
+    await page.keyboard.press("Enter");
+    log("Pressed Enter after email", "green");
+  } catch (error) {
+    log(`Error filling email field: ${error.message}`, "red");
+    log("Attempting alternative approach...", "yellow");
+    // Try alternative approach - wait a bit and retry
+    await delay(2000);
+    try {
+      // Simple wait using existing delay function
+      await delay(1000);
+      await page.waitForSelector(SELECTORS.USERNAME_INPUT, { timeout: 10000 });
+      
+      // Fill the field again
+      await page.type(SELECTORS.USERNAME_INPUT, PersonalInfo.email);
+      log("Email field filled (retry)", "green");
+      
+      await page.keyboard.press("Enter");
+      log("Pressed Enter after email (retry)", "green");
+    } catch (retryError) {
+      log(`Retry failed for email field: ${retryError.message}`, "red");
+      // Log the page content for debugging
+      try {
+        const pageContent = await page.content();
+        log("Page content at time of error (first 1000 chars):", "red");
+        log(pageContent.substring(0, 1000), "red");
+      } catch (contentError) {
+        log(`Could not retrieve page content: ${contentError.message}`, "red");
+      }
+      throw retryError;
+    }
+  }
 
   // Password
+  log("Generating password...", "green");
   const password = await generatePassword();
-  await page.waitForSelector(SELECTORS.PASSWORD_INPUT);
-  await page.type(SELECTORS.PASSWORD_INPUT, password);
-  await page.keyboard.press("Enter");
+  log(`Generated password: ${password}`, "yellow");
+  log("Waiting for password input field...", "yellow");
+  
+  // Try the primary selector first
+  let passwordFieldFound = false;
+  try {
+    await page.waitForSelector(SELECTORS.PASSWORD_INPUT, { timeout: 15000 });
+    log("Primary password input found, filling...", "green");
+    await page.type(SELECTORS.PASSWORD_INPUT, password);
+    passwordFieldFound = true;
+  } catch (error) {
+    log(`Primary selector failed: ${error.message}`, "yellow");
+  }
+  
+  // If primary failed, try alternatives
+  if (!passwordFieldFound) {
+    const alternativeSelectors = [
+      'input[type="password"]',
+      'input[name="password"]',
+      'input[id="i0118"]',
+      '#i0118'
+    ];
+    
+    for (const selector of alternativeSelectors) {
+      try {
+        log(`Trying alternative selector: ${selector}`, "yellow");
+        await page.waitForSelector(selector, { timeout: 5000 });
+        log(`Alternative selector ${selector} found, filling...`, "green");
+        await page.type(selector, password);
+        passwordFieldFound = true;
+        break; // Success, exit the loop
+      } catch (altError) {
+        log(`Alternative selector ${selector} failed: ${altError.message}`, "yellow");
+      }
+    }
+  }
+  
+  if (passwordFieldFound) {
+    log("Password field filled successfully", "green");
+    await page.keyboard.press("Enter");
+    log("Pressed Enter after password", "green");
+  } else {
+    log("WARNING: Could not find password field after all attempts", "red");
+    throw new Error("Password field not found after all selector attempts");
+  }
+
+  // Country/Region selection
+  log("Selecting country/region...", "green");
+  try {
+    await page.waitForSelector('#countryDropdownId', { timeout: 10000 });
+    await page.click('#countryDropdownId');
+    log("Country dropdown clicked", "green");
+    await page.keyboard.press("Enter");
+    log("Pressed Enter to select country", "green");
+  } catch (error) {
+    log("Country dropdown not found or selectable, continuing...", "yellow");
+  }
 
   // First Name and Last Name
   await page.waitForSelector(SELECTORS.FIRST_NAME_INPUT);
@@ -177,13 +312,18 @@ async function createAccount(page) {
 }
 
 async function resendCode(page, recoveryEmail) {
-  await page.click(SELECTORS.RESEND_CODE);
-  await page.waitForSelector(SELECTORS.EMAIL_CODE_INPUT);
-  log("Waiting for Email Code...", "yellow");
-  code = await recMail.getMessage(recoveryEmail);
-  log(`Email Code Received! Code: ${firstCode}`, "green");
-  await page.type(SELECTORS.EMAIL_CODE_INPUT, firstCode);
-  await page.keyboard.press("Enter");
+  try {
+    await page.click(SELECTORS.RESEND_CODE);
+    await page.waitForSelector(SELECTORS.EMAIL_CODE_INPUT);
+    log("Waiting for Email Code...", "yellow");
+    const code = await recMail.getMessage(recoveryEmail);
+    log(`Email Code Received! Code: ${code}`, "green");
+    await page.type(SELECTORS.EMAIL_CODE_INPUT, code);
+    await page.keyboard.press("Enter");
+  } catch (error) {
+    log("Failed to resend code: " + error.message, "red");
+    throw error;
+  }
 }
 
 async function writeCredentials(email, password) {
@@ -202,10 +342,11 @@ async function generatePersonalInfo() {
   const randomFirstName = names[Math.floor(Math.random() * names.length)].trim();
   const randomLastName = names[Math.floor(Math.random() * names.length)].trim();
   const username = randomFirstName + randomLastName + Math.floor(Math.random() * 9999);
+  const email = username + "@outlook.com";
   const birthDay = (Math.floor(Math.random() * 28) + 1).toString()
   const birthMonth = (Math.floor(Math.random() * 12) + 1).toString()
   const birthYear = (Math.floor(Math.random() * 10) + 1990).toString()
-  return { username, randomFirstName, randomLastName, birthDay, birthMonth, birthYear };
+  return { username, email, randomFirstName, randomLastName, birthDay, birthMonth, birthYear };
 }
 
 async function generatePassword() {
@@ -216,8 +357,8 @@ async function generatePassword() {
 }
 
 const SELECTORS = {
-  USERNAME_INPUT: '#usernameInput',
-  PASSWORD_INPUT: '#Password',
+  USERNAME_INPUT: 'input[type="email"], input[name="username"], input[id="i0116"]',
+  PASSWORD_INPUT: 'input[type="password"], input[name="password"], input[id="i0118"]',
   FIRST_NAME_INPUT: '#firstNameInput',
   LAST_NAME_INPUT: '#lastNameInput',
   BIRTH_DAY_INPUT: '#BirthDay',
