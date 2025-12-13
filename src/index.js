@@ -227,6 +227,18 @@ async function createAccount(page) {
     log("Day dropdown not found or selectable, continuing...", "yellow");
   }
 
+  // Month selection
+  log("Selecting month...", "green");
+  try {
+    await page.waitForSelector('#BirthMonthDropdown', { timeout: 10000 });
+    await page.click('#BirthMonthDropdown');
+    log("Month dropdown clicked", "green");
+    await page.keyboard.press("Enter");
+    log("Pressed Enter to select month", "green");
+  } catch (error) {
+    log("Month dropdown not found or selectable, continuing...", "yellow");
+  }
+
   // First Name and Last Name
   await page.waitForSelector(SELECTORS.FIRST_NAME_INPUT);
   await page.type(SELECTORS.FIRST_NAME_INPUT, PersonalInfo.randomFirstName);
