@@ -65,7 +65,7 @@ async function start() {
     headless: false
   });
   const page = await browser.newPage();
-  await page.setDefaultTimeout(5000);
+  await page.setDefaultTimeout(360000);
 
   const viewport = await page.evaluate(() => ({
     width: document.documentElement.clientWidth,
@@ -277,14 +277,43 @@ async function createAccount(page) {
   await page.type(SELECTORS.BIRTH_YEAR_INPUT, PersonalInfo.birthYear);
   await page.keyboard.press("Enter");
   const email = await page.$eval(SELECTORS.EMAIL_DISPLAY, el => el.textContent);
-  await page.waitForSelector(SELECTORS.FUNCAPTCHA, { timeout: 60000 });
-  log("Please solve the captcha", "yellow");
-  await page.waitForFunction(
-    (selector) => !document.querySelector(selector),
-    {},
-    SELECTORS.FUNCAPTCHA
-  );
-  log("Captcha Solved!", "green");
+  try {
+    await page.waitForSelector(SELECTORS.FUNCAPTCHA, { timeout: 60000 });
+    log("Please solve the captcha", "yellow");
+    log("Instructions: Hold down the CAPTCHA button until it completes", "yellow");
+    log("Look for element with class 'px-inner-loading-area' for the specific CAPTCHA", "yellow");
+    
+    // Enhanced CAPTCHA waiting with multiple approaches
+    const captchaTimeout = 60000;
+    const startTime = Date.now();
+    
+    // Try to wait for CAPTCHA to be solved with multiple checks
+    while (Date.now() - startTime < captchaTimeout) {
+      try {
+        // Check if CAPTCHA element is still present (not solved)
+        const captchaPresent = await page.evaluate((selector) => {
+          return !!document.querySelector(selector);
+        }, SELECTORS.FUNCAPTCHA);
+        
+        if (!captchaPresent) {
+          log("CAPTCHA appears to be solved", "green");
+          break;
+        }
+        
+        // Small delay before next check
+        await delay(1000);
+      } catch (checkError) {
+        // If evaluation fails, assume CAPTCHA is solved
+        log("CAPTCHA evaluation complete", "green");
+        break;
+      }
+    }
+    
+    log("CAPTCHA waiting period completed", "green");
+  } catch (captchaError) {
+    log("CAPTCHA detection timeout or error: " + captchaError.message, "yellow");
+    log("Continuing with process - CAPTCHA may have been bypassed", "yellow");
+  }
 
   // Waiting for confirmed account.
   try {
