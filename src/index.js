@@ -65,7 +65,7 @@ async function start() {
     headless: false
   });
   const page = await browser.newPage();
-  await page.setDefaultTimeout(3600000);
+  await page.setDefaultTimeout(5000);
 
   const viewport = await page.evaluate(() => ({
     width: document.documentElement.clientWidth,
@@ -245,6 +245,8 @@ async function createAccount(page) {
     await page.waitForSelector('#floatingLabelInput24', { timeout: 5000 });
     await page.type('#floatingLabelInput24', PersonalInfo.birthYear);
     log("Year " + PersonalInfo.birthYear + " entered into floatingLabelInput24", "green");
+    await page.keyboard.press("Enter");
+    log("Pressed Enter after year input", "green");
   } catch (error) {
     log("Year input failed: " + error.message, "red");
     log("Trying alternative approach...", "yellow");
@@ -253,6 +255,8 @@ async function createAccount(page) {
       await page.waitForSelector('input[name="BirthYear"]', { timeout: 5000 });
       await page.type('input[name="BirthYear"]', PersonalInfo.birthYear);
       log("Year " + PersonalInfo.birthYear + " entered via fallback method", "green");
+      await page.keyboard.press("Enter");
+      log("Pressed Enter after fallback year input", "green");
     } catch (fallbackError) {
       log("Fallback also failed: " + fallbackError.message, "red");
       log("Continuing with existing workflow...", "yellow");
