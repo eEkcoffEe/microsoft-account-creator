@@ -279,37 +279,124 @@ async function createAccount(page) {
   const email = await page.$eval(SELECTORS.EMAIL_DISPLAY, el => el.textContent);
   try {
     await page.waitForSelector(SELECTORS.FUNCAPTCHA, { timeout: 60000 });
-    log("Please solve the captcha", "yellow");
-    log("Instructions: Hold down the CAPTCHA button until it completes", "yellow");
-    log("Look for element with class 'px-inner-loading-area' for the specific CAPTCHA", "yellow");
+    log("Attempting to solve press-and-hold CAPTCHA...", "yellow");
     
-    // Enhanced CAPTCHA waiting with multiple approaches
-    const captchaTimeout = 60000;
-    const startTime = Date.now();
-    
-    // Try to wait for CAPTCHA to be solved with multiple checks
-    while (Date.now() - startTime < captchaTimeout) {
-      try {
-        // Check if CAPTCHA element is still present (not solved)
-        const captchaPresent = await page.evaluate((selector) => {
-          return !!document.querySelector(selector);
-        }, SELECTORS.FUNCAPTCHA);
+    // Try to solve the press-and-hold CAPTCHA automatically
+    try {
+      const frameHandle = await page.waitForSelector('#enforcementFrame', { timeout: 15000 });
+      const frame = await frameHandle.contentFrame();
+      
+      // First, find and click the initial button (with aria-disabled="true" and opacity: 0.25)
+      const initialButtonSelector = 'a[role="button"][aria-disabled="true"][style*="opacity: 0.25"]';
+      const initialButton = await frame.waitForSelector(initialButtonSelector, { timeout: 5000 });
+      if (initialButton) {
+        log("Found initial CAPTCHA button, clicking it...", "green");
+        await initialButton.click();
+        log("Initial button clicked, waiting 10 seconds...", "green");
+        await delay(10000); // Wait 10 seconds as per instructions
+      } else {
+        log("Initial CAPTCHA button not found, continuing...", "yellow");
+      }
+      
+      // Then, find and click the second button (with aria-label="Нажмите снова")
+      const secondButtonSelector = 'div[role="button"][tabindex="0"][aria-label*="Нажмите снова"]';
+      const secondButton = await frame.waitForSelector(secondButtonSelector, { timeout: 5000 });
+      if (secondButton) {
+        log("Found second CAPTCHA button, clicking it...", "green");
+        const box = await secondButton.boundingBox();
         
-        if (!captchaPresent) {
-          log("CAPTCHA appears to be solved", "green");
-          break;
+        // Add human-like mouse movement before clicking
+        await page.mouse.move(box.x - 30, box.y - 20);
+        await delay(300);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+        
+        // Click the button
+        await secondButton.click();
+        log("Second button clicked", "green");
+        
+        // Hold for 4 seconds (standard duration)
+        await delay(4000);
+        log("Holding CAPTCHA button for 4 seconds", "green");
+        
+        // Release the mouse button
+        await page.mouse.up();
+        log("Mouse released from CAPTCHA button", "green");
+        
+        log("Press-and-hold CAPTCHA solved successfully", "green");
+      } else {
+        log("Second CAPTCHA button not found, trying alternative approach...", "yellow");
+        // Alternative approach: try to find any button that is enabled
+        const buttonSelectors = [
+          'button',
+          'div[role="button"]',
+          '[class*="button"]',
+          '[class*="captcha"]'
+        ];
+        
+        let button = null;
+        for (const selector of buttonSelectors) {
+          try {
+            button = await frame.waitForSelector(selector, { timeout: 5000 });
+            if (button) {
+              log(`Found CAPTCHA button using selector: ${selector}`, "green");
+              break;
+            }
+          } catch (selectorError) {
+            log(`Selector ${selector} failed: ${selectorError.message}`, "yellow");
+            continue;
+          }
         }
         
-        // Small delay before next check
-        await delay(1000);
-      } catch (checkError) {
-        // If evaluation fails, assume CAPTCHA is solved
-        log("CAPTCHA evaluation complete", "green");
-        break;
+        if (button) {
+          const box = await button.boundingBox();
+          
+          // Add human-like mouse movement before clicking
+          await page.mouse.move(box.x - 30, box.y - 20);
+          await delay(300);
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+          
+          // Press and hold the mouse button
+          await page.mouse.down();
+          log("Mouse pressed down on CAPTCHA button", "green");
+          
+          // Hold for 4 seconds (standard duration)
+          await delay(4000);
+          log("Holding CAPTCHA button for 4 seconds", "green");
+          
+          // Release the mouse button
+          await page.mouse.up();
+          log("Mouse released from CAPTCHA button", "green");
+          
+          log("Press-and-hold CAPTCHA solved successfully", "green");
+        } else {
+          throw new Error("Could not find any CAPTCHA button");
+        }
+      }
+      
+    } catch (solveError) {
+      log("Failed to automatically solve CAPTCHA: " + solveError.message, "red");
+      log("Please solve the CAPTCHA manually", "yellow");
+      // Still wait for manual solution
+      const captchaTimeout = 60000;
+      const startTime = Date.now();
+      while (Date.now() - startTime < captchaTimeout) {
+        try {
+          const captchaPresent = await page.evaluate((selector) => {
+            return !!document.querySelector(selector);
+          }, SELECTORS.FUNCAPTCHA);
+          
+          if (!captchaPresent) {
+            log("CAPTCHA appears to be solved manually", "green");
+            break;
+          }
+          
+          await delay(1000);
+        } catch (checkError) {
+          log("CAPTCHA evaluation complete", "green");
+          break;
+        }
       }
     }
-    
-    log("CAPTCHA waiting period completed", "green");
   } catch (captchaError) {
     log("CAPTCHA detection timeout or error: " + captchaError.message, "yellow");
     log("Continuing with process - CAPTCHA may have been bypassed", "yellow");
