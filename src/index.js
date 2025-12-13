@@ -239,6 +239,26 @@ async function createAccount(page) {
     log("Month dropdown not found or selectable, continuing...", "yellow");
   }
 
+  // Year input (direct entry)
+  log("Entering year...", "green");
+  try {
+    await page.waitForSelector('#floatingLabelInput24', { timeout: 5000 });
+    await page.type('#floatingLabelInput24', PersonalInfo.birthYear);
+    log("Year " + PersonalInfo.birthYear + " entered into floatingLabelInput24", "green");
+  } catch (error) {
+    log("Year input failed: " + error.message, "red");
+    log("Trying alternative approach...", "yellow");
+    // Fallback to existing birth year input if the specific field doesn't exist
+    try {
+      await page.waitForSelector('input[name="BirthYear"]', { timeout: 5000 });
+      await page.type('input[name="BirthYear"]', PersonalInfo.birthYear);
+      log("Year " + PersonalInfo.birthYear + " entered via fallback method", "green");
+    } catch (fallbackError) {
+      log("Fallback also failed: " + fallbackError.message, "red");
+      log("Continuing with existing workflow...", "yellow");
+    }
+  }
+
   // First Name and Last Name
   await page.waitForSelector(SELECTORS.FIRST_NAME_INPUT);
   await page.type(SELECTORS.FIRST_NAME_INPUT, PersonalInfo.randomFirstName);
