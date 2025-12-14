@@ -373,33 +373,16 @@ async function createAccount(page) {
       await page.waitForSelector(SELECTORS.FUNCAPTCHA, { timeout: 3000 });
       log("CAPTCHA detected during name input", "green");
     } catch (captchaError) {
-      log("No CAPTCHA or next step detected after name input, clicking specific button...", "yellow");
-      // Direct approach: click the specific button structure provided by user
-      // The button has role="button", aria-disabled="true", tabindex="-1", style="opacity: 0.25;"
-      // But ID changes, so we'll find it by attributes rather than ID
+      log("No CAPTCHA or next step detected after name input, trying to press Enter...", "yellow");
+      // Instead of trying to click the button, simply press Enter key
+      // This should submit the form or proceed with the verification
       try {
-        // Look for button with the specific characteristics from user's example
-        const specificButtonSelector = 'a[role="button"][aria-disabled="true"][tabindex="-1"][style*="opacity: 0.25"]';
-        const button = await page.waitForSelector(specificButtonSelector, { timeout: 5000 });
-        if (button) {
-          log("Found specific button by attributes", "green");
-          const box = await button.boundingBox();
-          log("Button bounding box: x=" + box.x + ", y=" + box.y + ", width=" + box.width + ", height=" + box.height, "yellow");
-          
-          // Click the button at its center
-          await page.mouse.click(box.x + box.width/2, box.y + box.height/2);
-          log("Specific button clicked successfully", "green");
-        } else {
-          log("Specific button not found by attributes", "red");
-          // Fallback to clicking center of page
-          log("Falling back to center click...", "yellow");
-          await delay(500);
-          await page.mouse.click(250, 300); // Click near center of page
-          log("Clicked center of page as fallback", "green");
-        }
-      } catch (buttonError) {
-        log("Failed to click specific button: " + buttonError.message, "red");
-        // Fallback to clicking center of page
+        log("Pressing Enter to proceed with verification...", "green");
+        await page.keyboard.press("Enter");
+        log("Pressed Enter successfully", "green");
+      } catch (enterError) {
+        log("Failed to press Enter: " + enterError.message, "red");
+        // Fallback to clicking center of page as last resort
         log("Falling back to center click...", "yellow");
         await delay(500);
         await page.mouse.click(250, 300); // Click near center of page
