@@ -380,6 +380,12 @@ async function createAccount(page) {
         log("Pressing Enter to proceed with verification...", "green");
         await page.keyboard.press("Enter");
         log("Pressed Enter successfully", "green");
+        // Add a second press of Enter after 15 seconds
+        log("Waiting 15 seconds before second Enter press...", "yellow");
+        await delay(15000);
+        log("Pressing Enter second time...", "green");
+        await page.keyboard.press("Enter");
+        log("Pressed Enter second time successfully", "green");
       } catch (enterError) {
         log("Failed to press Enter: " + enterError.message, "red");
         // Fallback to clicking center of page as last resort
